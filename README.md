@@ -66,3 +66,10 @@ mvn install
 - Сделайте Commit изменений (git commit -am 'Add some feature')
 - Сделайте Push новой ветки (git push origin my-new-feature)
 - Создайте новый Pull Request
+
+Для локальной сборки необходимо установить артефакты JCP и раскоментировать их описание в pom.xml (обратить внимание на версию):
+
+- mvn install:install-file -Dfile="JCP.jar" -DgroupId="ru.CryptoPro" -DartifactId="JCP" -Dversion="2.0.39014" -Dpackaging="jar"
+- mvn install:install-file -Dfile="asn1rt.jar" -DgroupId="com.objsys.asn1j" -DartifactId="asn1rt" -Dversion="2.0.39014" -Dpackaging="jar"
+- mvn install:install-file -Dfile="ASN1P.jar" -DgroupId="ru.CryptoPro" -DartifactId="ASN1P" -Dversion="2.0.39014" -Dpackaging="jar"
+- mvn install:install-file -Dfile="JCryptoP.jar" -DgroupId="ru.CryptoPro" -DartifactId="JCryptoP" -Dversion="2.0.39014" -Dpackaging="jar"

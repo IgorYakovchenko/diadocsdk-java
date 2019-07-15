@@ -1,19 +1,22 @@
 package Diadoc.Api;
 
 import Diadoc.Api.Proto.*;
+import Diadoc.Api.Proto.Departments.DepartmentListProtos;
+import Diadoc.Api.Proto.Departments.DepartmentProtos;
+import Diadoc.Api.Proto.Departments.DepartmentToCreateProtos;
+import Diadoc.Api.Proto.Departments.DepartmentToUpdateProtos;
 import Diadoc.Api.Proto.Docflow.DocflowApiProtos;
 import Diadoc.Api.Proto.Documents.*;
 import Diadoc.Api.Proto.Documents.Types.DocumentTypeDescriptionProtos;
-import Diadoc.Api.Proto.Departments.*;
-import Diadoc.Api.Proto.Organizations.*;
 import Diadoc.Api.Proto.Employees.EmployeeProtos;
-import Diadoc.Api.Proto.Employees.Subscriptions.SubscriptionProtos;
 import Diadoc.Api.Proto.Employees.EmployeeToCreateProtos;
 import Diadoc.Api.Proto.Employees.EmployeeToUpdateProtos;
+import Diadoc.Api.Proto.Employees.Subscriptions.SubscriptionProtos;
 import Diadoc.Api.Proto.Events.DiadocMessage_GetApiProtos;
 import Diadoc.Api.Proto.Events.DiadocMessage_PostApiProtos;
 import Diadoc.Api.Proto.Invoicing.*;
-import Diadoc.Api.Proto.Invoicing.Signers.*;
+import Diadoc.Api.Proto.Invoicing.Signers.ExtendedSignerProtos;
+import Diadoc.Api.Proto.Organizations.OrganizationFeaturesProtos;
 import Diadoc.Api.Proto.Recognition.RecognitionProtos;
 import Diadoc.Api.Proto.Registration.RegistrationRequestProtos;
 import Diadoc.Api.Proto.Users.UserToUpdateProtos;
@@ -42,9 +45,9 @@ import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
 import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.params.*;
+import org.apache.http.params.HttpParams;
+import org.apache.http.params.HttpProtocolParams;
 import ru.CryptoPro.Crypto.CryptoProvider;
-import ru.CryptoPro.JCP.spec.GostCipherSpec;
 import ru.CryptoPro.JCP.ASN.CryptographicMessageSyntax.ContentInfo;
 import ru.CryptoPro.JCP.ASN.CryptographicMessageSyntax.EnvelopedData;
 import ru.CryptoPro.JCP.ASN.CryptographicMessageSyntax.KeyTransRecipientInfo;
@@ -53,6 +56,7 @@ import ru.CryptoPro.JCP.ASN.Gost28147_89_EncryptionSyntax.Gost28147_89_Parameter
 import ru.CryptoPro.JCP.ASN.GostR3410_EncryptionSyntax.GostR3410_KeyTransport;
 import ru.CryptoPro.JCP.JCP;
 import ru.CryptoPro.JCP.params.CryptParamsSpec;
+import ru.CryptoPro.JCP.spec.GostCipherSpec;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
@@ -65,6 +69,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -1079,8 +1084,7 @@ public class DiadocApi {
         return UniversalTransferDocumentInfoProtos.UniversalTransferDocumentBuyerTitleInfo.parseFrom(response);
     }
 
-    public byte[] ParseTitleXml(String boxId, String documentTypeNamedId, String documentFunction, String documentVersion, Integer titleIndex, byte[] content) throws IOException
-    {
+    public byte[] ParseTitleXml(String boxId, String documentTypeNamedId, String documentFunction, String documentVersion, Integer titleIndex, byte[] content) throws IOException {
         List<NameValuePair> parameters = new ArrayList<NameValuePair>();
         parameters.add(new BasicNameValuePair("boxId", boxId));
         parameters.add(new BasicNameValuePair("documentTypeNamedId", documentTypeNamedId));
@@ -1090,8 +1094,7 @@ public class DiadocApi {
         return PerformPostHttpRequest("/ParseTitleXml", parameters, content);
     }
 
-    public RevocationRequestInfoProtos.RevocationRequestInfo ParseRevocationRequestXml(byte[] xmlContent) throws IOException
-    {
+    public RevocationRequestInfoProtos.RevocationRequestInfo ParseRevocationRequestXml(byte[] xmlContent) throws IOException {
         return RevocationRequestInfoProtos.RevocationRequestInfo.parseFrom(PerformPostHttpRequest("/ParseRevocationRequestXml", null, xmlContent));
     }
 
@@ -1183,6 +1186,54 @@ public class DiadocApi {
 
             byte[] content = GetResponseBytes(webResponse);
             return new DocumentProtocolResult(DocumentProtocolProtos.DocumentProtocol.parseFrom(content));
+        } finally {
+            webResponse.getEntity().getContent().close();
+        }
+    }
+
+    public String GeneratePrintFormFromAttachment(String fromBoxId,
+                                                  DocumentTypeProtos.DocumentType documentType,
+                                                  byte[] attachment) throws IOException {
+        if (documentType == null)
+            throw new NullPointerException("documentType");
+
+        List<NameValuePair> parameters = new ArrayList<>();
+        if (fromBoxId != null)
+            parameters.add(new BasicNameValuePair("fromBoxId", fromBoxId));
+        parameters.add(new BasicNameValuePair("documentType", documentType.name()));
+
+        HttpResponse webResponse = ReceivePostHttpResponse("/GeneratePrintFormFromAttachment",
+                parameters, attachment);
+
+        try {
+            if (webResponse.getStatusLine().getStatusCode() != HttpStatus.SC_OK)
+                throw new IllegalStateException(webResponse.getStatusLine().toString());
+            byte[] content = GetResponseBytes(webResponse);
+            return new String(content, StandardCharsets.UTF_8);
+        } finally {
+            webResponse.getEntity().getContent().close();
+        }
+    }
+
+    public PrintFormResult GetGeneratedPrintForm(String printFormId) throws IOException, ParseException {
+        if (Tools.IsNullOrEmpty(printFormId))
+            throw new NullPointerException("printFormId");
+
+        List<NameValuePair> parameters = new ArrayList<>();
+        parameters.add(new BasicNameValuePair("printFormId", printFormId));
+
+        HttpResponse webResponse = ReceiveGetHttpResponse("/GetGeneratedPrintForm", parameters);
+
+        try {
+            if (webResponse.getStatusLine().getStatusCode() != HttpStatus.SC_OK)
+                throw new IllegalStateException(webResponse.getStatusLine().toString());
+
+            Integer retryAfter = TryGetRetryAfter(webResponse);
+            if (retryAfter != null)
+                return new PrintFormResult(retryAfter);
+
+            byte[] content = GetResponseBytes(webResponse);
+            return new PrintFormResult(new PrintFormContent(null, null, content));
         } finally {
             webResponse.getEntity().getContent().close();
         }
@@ -1378,6 +1429,13 @@ public class DiadocApi {
         parameters.add(new BasicNameValuePair("boxId", boxId));
         parameters.add(new BasicNameValuePair("draftId", draftId));
         PerformPostHttpRequest("/RecycleDraft", parameters, null);
+    }
+
+    public DiadocMessage_GetApiProtos.Message SendDraft(String operationId, DiadocMessage_PostApiProtos.DraftToSend draftToSend) throws IOException {
+        List<NameValuePair> parameters = new ArrayList<NameValuePair>();
+        parameters.add(new BasicNameValuePair("operationId", operationId));
+        return DiadocMessage_GetApiProtos.Message.parseFrom(
+                PerformPostHttpRequest("/SendDraft", parameters, draftToSend.toByteArray()));
     }
 
     public boolean CanSendInvoice(String boxId, byte[] certBytes) throws IOException {
@@ -1772,6 +1830,14 @@ public class DiadocApi {
         return DocumentListProtos.DocumentList.parseFrom(bytes);
     }
 
+    public DocflowApiProtos.GetDocflowBatchResponse GetDocflows(String boxId, DocflowApiProtos.GetDocflowBatchRequest request) throws IOException {
+        List<NameValuePair> params = new ArrayList<NameValuePair>();
+        params.add(new BasicNameValuePair("boxId", boxId));
+        byte[] body = request.toByteArray();
+        byte[] bytes = PerformPostHttpRequest("/V2/GetDocflows", params, body);
+        return DocflowApiProtos.GetDocflowBatchResponse.parseFrom(bytes);
+    }
+
     public DocflowApiProtos.SearchDocflowsResponse SearchDocflows(String boxId, DocflowApiProtos.SearchDocflowsRequest request) throws IOException {
         List<NameValuePair> params = new ArrayList<NameValuePair>();
         params.add(new BasicNameValuePair("boxId", boxId));
@@ -1786,6 +1852,18 @@ public class DiadocApi {
         byte[] body = request.toByteArray();
         byte[] bytes = PerformPostHttpRequest("/V2/GetDocflowsByPacketId", params, body);
         return DocflowApiProtos.GetDocflowsByPacketIdResponse.parseFrom(bytes);
+    }
+
+    public DocflowApiProtos.GetDocflowEventsResponse GetDocflowEvents(String boxId, DocflowApiProtos.GetDocflowEventsRequest request) throws IOException {
+        if (boxId == null) {
+            throw new NullPointerException("boxId");
+        } else if (request == null) {
+            throw new NullPointerException("request");
+        } else {
+            List<NameValuePair> parameters = new ArrayList();
+            parameters.add(new BasicNameValuePair("boxId", boxId));
+            return DocflowApiProtos.GetDocflowEventsResponse.parseFrom(this.PerformPostHttpRequest("/V2/GetDocflowEvents", parameters, request.toByteArray()));
+        }
     }
 
     public DiadocMessage_PostApiProtos.PrepareDocumentsToSignResponse PrepareDocumentsToSign(DiadocMessage_PostApiProtos.PrepareDocumentsToSignRequest request) throws IOException {
